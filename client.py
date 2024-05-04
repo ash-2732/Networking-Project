@@ -5,6 +5,16 @@ import tkinter as tk
 from tkinter import scrolledtext
 from tkinter import messagebox
 
+from fastapi import Depends
+from requests import Session
+import model
+
+from db import engine
+
+import db as database
+
+model.Base.metadata.create_all(bind=engine)
+
 HOST = '127.0.0.1'
 PORT = 1234
 
@@ -16,6 +26,8 @@ FONT = ("Helvetica", 17)
 BUTTON_FONT = ("Helvetica", 15)
 SMALL_FONT = ("Helvetica", 13)
 
+
+DB:Session = Depends(database.get_db)
 # Creating a socket object
 # AF_INET: we are going to use IPv4 addresses
 # SOCK_STREAM: we are using TCP packets for communication
@@ -35,6 +47,9 @@ def connect():
         client.connect((HOST, PORT))
         print("Successfully connected to server")
         add_message("[SERVER] Successfully connected to the server")
+        getHistory()
+
+
     except:
         messagebox.showerror("Unable to connect to server", f"Unable to connect to server {HOST} {PORT}")
 
@@ -49,17 +64,54 @@ def connect():
     username_textbox.config(state=tk.DISABLED)
     username_button.config(state=tk.DISABLED)
 
+
 def send_message():
     message = message_textbox.get()
     if message != '':
         client.sendall(message.encode())
         message_textbox.delete(0, len(message))
+
+        # Create a SQLAlchemy session
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        # Add the new message to the database
+        new_message = model.MessageHistory(sender=username_textbox.get(), message=message)
+        session.add(new_message)
+        session.commit()
+        
+        # Close the session
+        session.close()
     else:
         messagebox.showerror("Empty message", "Message cannot be empty")
 
+
+
+def getHistory():
+    # Create a SQLAlchemy session
+    from sqlalchemy.orm import sessionmaker
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    # Query the MessageHistory table to retrieve all messages
+    messages = session.query(model.MessageHistory).all()
+
+    # Display each message in the message box
+    for message in messages:
+        add_message(f"[{message.sender}] {message.message}")
+
+    # Close the session
+    session.close()
+
+
+
+
+
+
 root = tk.Tk()
 root.geometry("600x600")
-root.title("Messenger Client")
+root.title("FastTalk")
 root.resizable(False, False)
 
 root.grid_rowconfigure(0, weight=1)
@@ -75,7 +127,7 @@ middle_frame.grid(row=1, column=0, sticky=tk.NSEW)
 bottom_frame = tk.Frame(root, width=600, height=100, bg=DARK_GREY)
 bottom_frame.grid(row=2, column=0, sticky=tk.NSEW)
 
-username_label = tk.Label(top_frame, text="Enter username:", font=FONT, bg=DARK_GREY, fg=WHITE)
+username_label = tk.Label(top_frame, text="Username:", font=FONT, bg=DARK_GREY, fg=WHITE)
 username_label.pack(side=tk.LEFT, padx=10)
 
 username_textbox = tk.Entry(top_frame, font=FONT, bg=MEDIUM_GREY, fg=WHITE, width=23)
